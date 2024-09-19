@@ -2,7 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { EtherscanService } from '../../etherscan/services/etherscan.service';
 import { BalanceBiggestChangeResponse } from '../types/balance-biggest-change.response';
 import { ErrorResponse } from '../../etherscan/types/error.response';
-import { SuccessBlockResponse } from '../../etherscan/types/get-block-by-number.response';
+import { numberToHex } from '../../../utils/numberToHex';
+import { hexToNumber } from '../../../utils/hexToNumber';
 
 @Injectable()
 export class BalanceService {
@@ -14,14 +15,14 @@ export class BalanceService {
       const recentBlockResponse =
         await this.etherscanService.getRecentBlockNumber();
 
-      if ((recentBlockResponse as ErrorResponse).status) {
+      if (this.isErrorResponse(recentBlockResponse)) {
         throw new BadRequestException(
           'Request to get recent block number failed with error',
           { description: recentBlockResponse.result },
         );
       }
 
-      const recentBlockNumber = this.hexToNumber(recentBlockResponse.result);
+      const recentBlockNumber = hexToNumber(recentBlockResponse.result);
 
       const addressBalanceMap = new Map<string, number>();
 
@@ -29,21 +30,19 @@ export class BalanceService {
         const blockNumber = recentBlockNumber - i;
         const transactions =
           await this.etherscanService.getTransactionInformationByBlockNumber(
-            this.numberToHex(blockNumber),
+            numberToHex(blockNumber),
           );
 
-        if ((transactions as ErrorResponse).status) {
+        if (this.isErrorResponse(transactions)) {
           throw new BadRequestException(
             'Request to get recent block number failed with error',
-            { description: transactions.result as string },
+            { description: transactions.result },
           );
         }
 
-        for (const transaction of (transactions as SuccessBlockResponse).result
-          .transactions) {
-          const from = transaction.from;
-          const to = transaction.to ? transaction.to : null;
-          const value = this.hexToNumber(transaction.value);
+        for (const transaction of transactions.result.transactions) {
+          const { to, from } = transaction;
+          const value = hexToNumber(transaction.value);
 
           addressBalanceMap.set(
             from,
@@ -76,11 +75,7 @@ export class BalanceService {
     }
   }
 
-  numberToHex(value: number): string {
-    return '0x' + value.toString(16);
-  }
-
-  hexToNumber(hexValue: string): number {
-    return parseInt(hexValue, 16);
+  isErrorResponse<T>(response: ErrorResponse | T): response is ErrorResponse {
+    return !!(response as ErrorResponse).status;
   }
 }
